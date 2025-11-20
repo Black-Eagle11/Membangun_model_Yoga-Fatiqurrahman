@@ -1,11 +1,5 @@
-<<<<<<< HEAD
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-modelling_tuning.py — FIXED VERSION
-Author  : Yoga Fatiqurrahman
-Tujuan  : Hyperparameter Tuning TANPA preprocessing ulang
-"""
 
 import os, json, argparse, time, warnings
 from pathlib import Path
@@ -26,9 +20,6 @@ from sklearn.metrics import (
 
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
-# ========================
-# PATH — Hasil Preprocessing
-# ========================
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "namadataset_preprocessing"
 REPORT_DIR = ROOT / "reports"
@@ -38,24 +29,14 @@ ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 
 SEED = 42
 
-
-# ========================
-# Load dataset yang SUDAH PREPROCESSING
-# ========================
 def load_splits():
     tr = pd.read_csv(DATA_DIR / "train.csv")
     te = pd.read_csv(DATA_DIR / "test.csv")
     val_csv = DATA_DIR / "val.csv"
-
     target = "target" if "target" in tr.columns else "condition"
     feats = [c for c in tr.columns if c != target]
-
     return tr, te, feats, target
 
-
-# ========================
-# Plot functions
-# ========================
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -86,10 +67,6 @@ def plot_pr(y, prob, out):
     plt.plot(r, p)
     save_fig(out)
 
-
-# ========================
-# Model Candidates (Tanpa Preprocess)
-# ========================
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -114,10 +91,6 @@ def candidates():
         ),
     }
 
-
-# ========================
-# Evaluasi + Log
-# ========================
 def eval_and_log(model, X, y, phase, out_dir):
     if hasattr(model, "predict_proba"):
         prob = model.predict_proba(X)[:,1]
@@ -141,7 +114,6 @@ def eval_and_log(model, X, y, phase, out_dir):
 
     mlflow.log_metrics({k: float(v) for k,v in metrics.items()})
 
-    # confusion matrix
     cm = confusion_matrix(y, pred)
     cm_path = out_dir / f"{phase}_cm.png"
     plot_cm(cm, cm_path)
@@ -156,10 +128,6 @@ def eval_and_log(model, X, y, phase, out_dir):
 
     return metrics
 
-
-# ========================
-# MAIN
-# ========================
 def main():
     mlflow.set_experiment("Heart Disease — Tuning")
 
@@ -202,7 +170,6 @@ def main():
 
             test_metrics = eval_and_log(best, Xte, yte, "test", out_dir)
 
-            # save model
             pkl = out_dir / f"{name}_best.pkl"
             joblib.dump(best, pkl)
             mlflow.log_artifact(str(pkl))
@@ -212,18 +179,13 @@ def main():
 
             results[name] = test_metrics
 
-    # summary
     summ_sorted = sorted(results.items(), key=lambda x: x[1]["test_f1"], reverse=True)
     summ_path = REPORT_DIR / "tuning_summary.json"
     json.dump(summ_sorted, open(summ_path, "w"), indent=2)
     mlflow.log_artifact(str(summ_path))
 
-    print("\n>>> BEST MODEL:", summ_sorted[0][0])
+    print("\nBEST MODEL:", summ_sorted[0][0])
     print("Saved summary:", summ_path)
-
 
 if __name__ == "__main__":
     main()
-=======
- 
->>>>>>> 0d7e9fa7761f27d0ae46c6907abfb52bb9e0a753
