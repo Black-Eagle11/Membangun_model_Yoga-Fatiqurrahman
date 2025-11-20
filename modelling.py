@@ -1,16 +1,5 @@
-<<<<<<< HEAD
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-"""
-Modelling — Heart Disease (tabular, binary)
-Author  : Yoga Fatiqurrahman
-Level   : Advanced (Dicoding) — autolog + manual logging (>= 2 metrik tambahan)
-
-VERSI FIX — TANPA PREPROCESSING ULANG
-- Hanya memakai dataset hasil preprocessing (train.csv, val.csv, test.csv)
-- Tidak ada ColumnTransformer, SimpleImputer, StandardScaler, OneHotEncoder, atau Pipeline preprocessing
-"""
 
 import os
 import sys
@@ -51,6 +40,7 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -58,6 +48,8 @@ warnings.filterwarnings("ignore")
 
 SEED = 42
 random.seed(SEED)
+import numpy as np
+
 np.random.seed(SEED)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -89,11 +81,9 @@ def plot_confusion_matrix(
     ticks = np.arange(len(classes))
     plt.xticks(ticks, classes)
     plt.yticks(ticks, classes)
-
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
             plt.text(j, i, cm[i, j], ha="center", va="center")
-
     _save_fig(out_path)
 
 
@@ -136,43 +126,30 @@ def _target_col(df: pd.DataFrame) -> str:
 
 
 def load_preprocessed() -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, str]:
-    """
-    Load dataset yang SUDAH DIPREPROCESSING dari kriteria 1.
-    Tidak ada lagi imputing, scaling, encoding di sini.
-    """
     train_csv = PREP_DIR / "train.csv"
     val_csv = PREP_DIR / "val.csv"
     test_csv = PREP_DIR / "test.csv"
-
     if not train_csv.exists() or not test_csv.exists():
         raise FileNotFoundError(
             f"Tidak menemukan train/test.csv di {PREP_DIR}. "
             f"Jalankan otomatisasi preprocessing terlebih dahulu."
         )
-
     df_train = pd.read_csv(train_csv)
     df_test = pd.read_csv(test_csv)
-
     if val_csv.exists():
         df_val = pd.read_csv(val_csv)
         target = _target_col(df_val)
         df_train = pd.concat([df_train, df_val], ignore_index=True)
     else:
         target = _target_col(df_train)
-
     X_train = df_train.drop(columns=[target])
     y_train = df_train[target].astype(int)
     X_test = df_test.drop(columns=[target])
     y_test = df_test[target].astype(int)
-
     return X_train, X_test, y_train, y_test, target
 
 
 def candidate_models() -> Dict[str, object]:
-    """
-    Kumpulan model kandidat (tanpa preprocessing).
-    Input X_train/X_test diasumsikan SUDAH numerik & bersih dari preprocessing.
-    """
     return {
         "logreg_l2": LogisticRegression(
             max_iter=1000,
@@ -208,9 +185,6 @@ def evaluate_and_log(
     name: str,
     classes: Tuple[str, str] = ("0", "1"),
 ) -> Dict[str, float]:
-    """
-    Evaluasi + log manual ke MLflow (banyak metrik + artefak).
-    """
     metrics: Dict[str, float] = {
         "accuracy": accuracy_score(y_true, y_pred),
         "precision": precision_score(y_true, y_pred, zero_division=0),
@@ -223,50 +197,39 @@ def evaluate_and_log(
         "brier": brier_score_loss(y_true, y_prob),
         "mcc": matthews_corrcoef(y_true, y_pred),
     }
-
     metrics["balanced_acc"] = balanced_accuracy_score(y_true, y_pred)
     metrics["kappa"] = cohen_kappa_score(y_true, y_pred)
     metrics["log_loss"] = log_loss(y_true, y_prob, labels=[0, 1])
-
     mlflow.log_metrics({f"test_{k}": float(v) for k, v in metrics.items()})
-
     rep_txt = classification_report(y_true, y_pred, digits=4)
     rep_path = REPORT_DIR / f"{name}_classification_report.txt"
     rep_path.write_text(rep_txt)
     mlflow.log_artifact(str(rep_path))
-
     cm = confusion_matrix(y_true, y_pred)
     cm_path = REPORT_DIR / f"{name}_confusion_matrix.png"
     plot_confusion_matrix(cm, classes=list(classes), out_path=cm_path)
     mlflow.log_artifact(str(cm_path))
-
     roc_path = REPORT_DIR / f"{name}_roc.png"
     pr_path = REPORT_DIR / f"{name}_pr.png"
     plot_roc(y_true, y_prob, roc_path)
     plot_pr(y_true, y_prob, pr_path)
     mlflow.log_artifact(str(roc_path))
     mlflow.log_artifact(str(pr_path))
-
     return metrics
 
 
 def main():
-    # Pastikan tidak ada run lama yang nyangkut
     try:
         mlflow.end_run()
     except Exception:
         pass
     time.sleep(0.5)
-
-    # Set tracking URI
     env_uri = os.getenv("MLFLOW_TRACKING_URI")
     if env_uri:
         print(f"[INFO] Menggunakan MLflow tracking URI dari environment → {env_uri}")
         mlflow.set_tracking_uri(env_uri)
     else:
         mlflow.set_tracking_uri(MLRUNS_URI)
-
-    # Argparse sederhana
     ap = argparse.ArgumentParser(
         description="Baseline modelling — Heart Disease (tabular, binary)."
     )
@@ -284,71 +247,52 @@ def main():
         help="Model spesifik yang ingin dilatih (default: all).",
     )
     args = ap.parse_args()
-
     mlflow.set_experiment(args.experiment)
     print(f"\n[INFO] MLflow Tracking URI aktif: {mlflow.get_tracking_uri()}")
-
-    # Load dataset HASIL PREPROCESSING (tidak ada preprocessing ulang di sini)
     X_train, X_test, y_train, y_test, target_col = load_preprocessed()
     print(
         f"[INFO] Dataset loaded → Train: {X_train.shape}, "
         f"Test: {X_test.shape}, Target: {target_col}"
     )
-
-    # Aktifkan autolog
     try:
         mlflow.sklearn.autolog(log_models=True)
         print("[INFO] MLflow sklearn autolog aktif.")
     except Exception as e:
         print(f"[WARN] Autolog gagal diaktifkan: {e}")
-
     all_models = candidate_models()
     if args.model == "all":
         models = all_models
     else:
         models = {args.model: all_models[args.model]}
-
     summary: Dict[str, Dict[str, float]] = {}
     trained_models: Dict[str, object] = {}
-
     print(f"\n[INFO] Training {len(models)} model(s): {', '.join(models.keys())}")
-
     with mlflow.start_run(run_name="baseline_all_models") as parent_run:
-        # Tag run utama
         mlflow.set_tag("author", "Yoga Fatiqurrahman")
         mlflow.set_tag("project", "Heart Disease — Baseline Models")
         mlflow.set_tag("hostname", socket.gethostname())
         mlflow.set_tag("os", platform.system())
         mlflow.set_tag("python_version", platform.python_version())
-
         mlflow.log_param("seed_global", SEED)
         mlflow.log_param("sklearn_version", __import__("sklearn").__version__)
         mlflow.log_param("pandas_version", pd.__version__)
         mlflow.log_param("numpy_version", np.__version__)
         mlflow.log_param("run_env", os.getenv("GITHUB_WORKFLOW", "local"))
-
-        # Simpan sedikit info bentuk fitur
         np.save(REPORT_DIR / "train_feature_shape.npy", np.array(X_train.shape))
         np.save(REPORT_DIR / "test_feature_shape.npy", np.array(X_test.shape))
         mlflow.log_artifact(str(REPORT_DIR / "train_feature_shape.npy"))
         mlflow.log_artifact(str(REPORT_DIR / "test_feature_shape.npy"))
-
         total_train_time = 0.0
-
         for name, clf in models.items():
             print(f"\n[INFO] Fitting model: {name} ...")
             with mlflow.start_run(run_name=name, nested=True):
                 mlflow.set_tag("model_name", name)
                 mlflow.set_tag("author", "Yoga Fatiqurrahman")
-
-                # LANGSUNG FIT KE DATA HASIL PREPROCESSING
                 t0 = time.time()
                 clf.fit(X_train, y_train)
                 train_time = time.time() - t0
                 total_train_time += train_time
                 mlflow.log_metric("train_time_sec", float(train_time))
-
-                # Probabilitas
                 if hasattr(clf, "predict_proba"):
                     y_prob = clf.predict_proba(X_test)[:, 1]
                 else:
@@ -359,9 +303,7 @@ def main():
                         )
                     except Exception:
                         y_prob = np.zeros_like(y_test, dtype=float)
-
                 y_pred = clf.predict(X_test)
-
                 metrics = evaluate_and_log(
                     y_true=y_test,
                     y_prob=y_prob,
@@ -371,8 +313,6 @@ def main():
                 )
                 summary[name] = metrics
                 trained_models[name] = clf
-
-                # Simpan model manual (selain autolog)
                 try:
                     input_example = X_train.head(1)
                     mlflow.sklearn.log_model(
@@ -382,34 +322,26 @@ def main():
                     )
                 except Exception as e:
                     print(f"[WARN] log_model manual gagal untuk {name}: {e}")
-
-        # Simpan ringkasan hasil semua model
         summ_path = REPORT_DIR / "baseline_summary.json"
         summ_path.write_text(json.dumps(summary, indent=2))
         mlflow.log_artifact(str(summ_path))
 
-        # Pilih best model berdasarkan (roc_auc, f1)
         def _score(m: Dict[str, float]) -> Tuple[float, float]:
             return (m.get("roc_auc", 0.0), m.get("f1", 0.0))
 
         best_model_name, _ = max(summary.items(), key=lambda kv: _score(kv[1]))
         mlflow.set_tag("best_model", best_model_name)
-
         best_clf = trained_models[best_model_name]
         best_checkpoint_path = REPORT_DIR / f"{best_model_name}_model_best.pkl"
         joblib.dump(best_clf, best_checkpoint_path)
         mlflow.log_artifact(str(best_checkpoint_path))
-
         (REPORT_DIR / "best_model.txt").write_text(best_model_name)
         mlflow.log_artifact(str(REPORT_DIR / "best_model.txt"))
-
         mlflow.log_metric("total_models_trained", len(models))
-
         cpu_usage = psutil.cpu_percent(interval=None)
         mem_usage = psutil.virtual_memory().percent
         mlflow.log_metric("cpu_usage_percent", cpu_usage)
         mlflow.log_metric("mem_usage_percent", mem_usage)
-
     print("\n[INFO] Training selesai tanpa error.")
     print(f"[INFO] Total models trained: {len(models)}")
     print(f"[INFO] Total training time (approx): {total_train_time:.2f} seconds")
@@ -428,6 +360,3 @@ if __name__ == "__main__":
             mlflow.end_run()
         except Exception:
             pass
-=======
- 
->>>>>>> 0d7e9fa7761f27d0ae46c6907abfb52bb9e0a753
